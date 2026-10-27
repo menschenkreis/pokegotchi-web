@@ -22,7 +22,7 @@ $('#back').onclick=()=>key(0);$('#power').onclick=()=>{stopAudio();key(1);};
 $('#sound').onclick=async()=>{await unlockAudio();await loadClips();key(2);};
 $('#shake').onclick=()=>key(3);
 $('#hatch').onclick=()=>{if(!ready)return;m._web_hatch();persist();};
-document.querySelectorAll('[data-game]').forEach(b=>b.onclick=()=>{if(!ready)return;if(state(2)!==2){status.textContent='Hatch your egg first using the workshop shortcut.';return;}stopAudio();m._web_open(Number(b.dataset.game));});
+document.querySelectorAll('[data-game]').forEach(b=>b.onclick=()=>{if(!ready)return;if(state(2)!==2){alert(state(2)===1?'Your companion is hatching. Give it a few seconds.':'Hatch your egg first using the workshop shortcut.');return;}stopAudio();m._web_open(Number(b.dataset.game));});
 $('#reset').onclick=()=>{if(!ready||!confirm('Start a new egg? Your current browser companion will be replaced.'))return;stopAudio();release();m._web_init(crypto.getRandomValues(new Uint32Array(1))[0]);echoToken='';persist();updateSound();};
 document.querySelectorAll('[data-tilt]').forEach(b=>{b.onpointerdown=e=>{e.preventDefault();b.setPointerCapture(e.pointerId);pad=b.dataset.tilt.split(',').map(Number);};b.onpointerup=b.onpointercancel=b.onlostpointercapture=()=>{pad=[0,0];};});
 const shortcuts={Escape:0,' ':1,m:2,M:2,s:3,S:3,c:4,C:4,'1':5,'2':6,'3':7};
