@@ -31,3 +31,4 @@ int web_state(int field){switch(field){case 0:return game.muted;case 1:return ga
 int web_sound(void){pg_sound sound=game.sound;game.sound=PG_SOUND_NONE;if(sound==PG_SOUND_NONE||game.muted||game.standby||game.screen==PG_ECHO)return 0;pg_chip_start(&chip,sound,game.pet.phase==PG_ALIVE?(pg_species)game.pet.species:PG_MOSSLET,game.performance_variant);return (int)pg_chip_read(&chip,pcm,16000);}
 int16_t *web_pcm(void){return pcm;}
 void web_audio_done(unsigned session,unsigned round,int stage){pg_echo_audio_done(&game,session,round,(pg_echo_stage)stage);}
+void web_audio_ready(int ready){game.echo_audio=ready!=0;}
