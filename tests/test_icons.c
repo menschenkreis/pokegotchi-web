@@ -216,7 +216,7 @@ static void compact_echo_portrait(void){
         g.echo.stage=stage;g.echo.prompt=frame%3;g.anim=frame*.17f;
         pg_game pose=g;pose.facing=g.echo.prompt==PG_SWIPE?-1:1;
         pose.emote=stage==PG_ECHO_CUE?PG_EMOTE_INVITE:stage==PG_ECHO_INPUT?PG_EMOTE_CURIOUS:stage==PG_ECHO_RETRY?PG_EMOTE_SASS:PG_EMOTE_CHEER;
-        pose.emote_time=pose.emote_duration=1;
+        pose.emote_duration=1;pose.emote_time=1-fmodf(g.anim,.8f);
         for(int i=0;i<72*72;++i)sprite[i]=pg_rgb(0xff00ff);
         pg_creature(&sc,&pose,36,66,1);pg_render(&c,&g);
         int ink=0;for(int y=0;y<48;++y)for(int x=0;x<48;++x){
@@ -226,4 +226,21 @@ static void compact_echo_portrait(void){
     }
     free(screen);
 }
-int main(void){compact_echo_portrait();art();controls();purity();round_screen();participant_clearance();rectangle_pixels();damage_regions();printf("PASS %u icon/interface checks; %d original sprites, clipping, targets, guide, journal, memorial, pure rendering\n",checks,PG_ICON_COUNT);return 0;}
+static void forest_game_frames(void){
+    static uint16_t first[PG_W*PG_H],second[PG_W*PG_H];
+    pg_canvas a={first,PG_W,PG_H},b={second,PG_W,PG_H};
+    for(int game=0;game<PG_GAME_COUNT;++game){
+        pg_game g;pg_init(&g,42);g.pet.phase=PG_ALIVE;pg_open_game(&g,game);
+        if(game==0)g.ttt.cells[4]=1;
+        if(game==1)g.tilt.ready=0;
+        if(game==2){g.rhythm.lit=1;g.rhythm.showing=true;}
+        if(game==3){g.echo.stage=PG_ECHO_INPUT;g.echo.timer=3;}
+        if(game==4){g.balance.started=true;g.balance.ready=0;}
+        if(game==5)g.wash.splash=0;
+        g.anim=.05f;pg_game before=g;memset(first,0,sizeof first);pg_render_interface(&a,&g);
+        CHECK(!memcmp(&g,&before,sizeof g));
+        g.anim=.55f;memset(second,0,sizeof second);pg_render_interface(&b,&g);
+        CHECK(memcmp(first,second,sizeof first)!=0);
+    }
+}
+int main(void){forest_game_frames();compact_echo_portrait();art();controls();purity();round_screen();participant_clearance();rectangle_pixels();damage_regions();printf("PASS %u icon/interface checks; %d original sprites, clipping, targets, guide, journal, memorial, pure rendering\n",checks,PG_ICON_COUNT);return 0;}

@@ -1,7 +1,9 @@
-import createGame from '../dist/game.mjs';
+const version=process.argv[2]||'forest';
+if(!['forest','classic'].includes(version))throw Error('Unknown test version');
+const {default:createGame}=await import(`../dist/versions/${version}/game.mjs`);
 import {readFile} from 'node:fs/promises';
 import assert from 'node:assert/strict';
-const m=await createGame({wasmBinary:await readFile(new URL('../dist/game.wasm',import.meta.url))});
+const m=await createGame({wasmBinary:await readFile(new URL(`../dist/versions/${version}/game.wasm`,import.meta.url))});
 m._web_init(42);
 assert.equal(m._web_state(2),0,'starts with mystery egg');
 assert.equal(m._web_state(0),1,'startup muted');
@@ -39,4 +41,4 @@ const ck=saved(),legacy=ck.slice(88,816);restore(legacy);assert.equal(m._web_sta
 // Night pose is part of the new browser checkpoint.
 m._web_key(0);tap(120,220);const night=saved();m._web_init(20);restore(night);assert.equal(m._web_state(7),1,'night restored');
 m._web_reset(21);assert.equal(m._web_state(9),1,'full reset restarts tutorial');
-console.log('WASM: tutorial resume/delivery, seven-minute timer, naming, six games, legacy migration, night scene, corruption and reset pass');
+console.log(version+' WASM: tutorial resume/delivery, seven-minute timer, naming, six games, legacy migration, night scene, corruption and reset pass');

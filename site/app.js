@@ -1,6 +1,14 @@
-import createGame from './game.mjs';
+import {versions,selectVersion} from './versions.mjs';
+const version=selectVersion(location.search),edition=versions[version];
+document.querySelectorAll('[data-version]').forEach(a=>{a.toggleAttribute('aria-current',false);if(a.dataset.version===version)a.setAttribute('aria-current','true');});
+document.querySelector('#version-label').textContent=`${edition.name} · browser preview`;
+document.querySelector('#version-description').textContent=version==='forest'?'The latest forest world: new creatures, painted woodland, warm wooden menus and frame animation.':'The previous published version: the original Lantern Grove artwork and creatures.';
+document.querySelector('#hero-image').src=edition.day;
+document.querySelector('#night-image').src=edition.night;
+document.querySelector('#hero-caption').textContent=`${edition.name} · actual shared game renderer`;
+
 const $=s=>document.querySelector(s),canvas=$('#screen'),ctx=canvas.getContext('2d',{alpha:false});
-const status=$('#status'),saveNote=$('#save-note'),storageKey='pokegotchi-browser-v1';
+const status=$('#status'),saveNote=$('#save-note'),storageKey=edition.storageKey;
 let m,activePointer=null,last=0,accum=0,saveElapsed=0,keys=new Set(),pad=[0,0],audio,playing=[],echoToken='',ready=false,storageBlocked=false;
 function stopAudio(){for(const s of playing){s.onended=null;try{s.stop();}catch{}}playing=[];}
 async function unlockAudio(){try{audio??=new AudioContext({sampleRate:16000});if(audio.state==='suspended')await audio.resume();await loadClips();}catch{}}
@@ -10,7 +18,7 @@ async function loadClips(){if(!audio||Object.keys(clips).length===6)return;await
 function state(n){return m._web_state(n);}
 function updateSound(){const muted=state(0);$('#sound').textContent=`Sound: ${muted?'off':'on'}`;$('#sound').setAttribute('aria-pressed',String(!muted));if(muted||state(7))stopAudio();}
 function key(n){if(!ready)return;m._web_key(n);updateSound();persist();}
-function persist(){if(!ready||storageBlocked)return;try{const n=m._web_save(),p=m._web_save_buffer();if(!n)throw Error("Save validation failed");const bytes=m.HEAPU8.subarray(p,p+n);localStorage.setItem(storageKey,btoa(String.fromCharCode(...bytes)));saveNote.textContent='Saved on this browser. Time pauses while this tab is hidden. Sound starts off.';}catch{saveNote.textContent='Browser storage is unavailable. This session will not be saved.';}}
+function persist(){if(!ready||storageBlocked)return;try{const n=m._web_save(),p=m._web_save_buffer();if(!n)throw Error("Save validation failed");const bytes=m.HEAPU8.subarray(p,p+n);localStorage.setItem(storageKey,btoa(String.fromCharCode(...bytes)));saveNote.textContent=`Saved for ${edition.name} on this browser. Time pauses while hidden. Sound starts off.`;}catch{saveNote.textContent='Browser storage is unavailable. This session will not be saved.';}}
 function release(){if(activePointer!==null&&ready)m._web_pointer(3,-100,-100);activePointer=null;pad=[0,0];keys.clear();if(ready)m._web_tilt(0,0);}
 function position(e){const r=canvas.getBoundingClientRect();return [(e.clientX-r.left)*466/r.width,(e.clientY-r.top)*466/r.height];}
 canvas.addEventListener('pointerdown',e=>{if(!ready||activePointer!==null||e.button!==0)return;e.preventDefault();canvas.focus({preventScroll:true});unlockAudio();activePointer=e.pointerId;canvas.setPointerCapture(e.pointerId);m._web_pointer(0,...position(e));});
@@ -41,4 +49,4 @@ function soundTick(){
 }
 function render(){const p=m._web_frame()/2,pixels=m.HEAPU16.subarray(p,p+466*466),image=ctx.createImageData(466,466),out=image.data;for(let i=0;i<pixels.length;i++){const v=pixels[i],j=i*4;out[j]=(v>>11)*255/31;out[j+1]=((v>>5)&63)*255/63;out[j+2]=(v&31)*255/31;out[j+3]=255;}ctx.putImageData(image,0,0);}
 function frame(now){requestAnimationFrame(frame);if(document.hidden||!ready)return;if(!last)last=now;accum+=Math.min((now-last)/1000,.1);last=now;if(accum<.04)return;const dt=accum;accum=0;m._web_tilt(pad[0]+Number(keys.has('ArrowRight'))-Number(keys.has('ArrowLeft')),pad[1]+Number(keys.has('ArrowDown'))-Number(keys.has('ArrowUp')));m._web_audio_ready(audio?.state==='running'&&Object.keys(clips).length===6?1:0);m._web_tick(dt);soundTick();render();updateSound();saveElapsed+=dt;if(saveElapsed>=5){persist();saveElapsed=0;}status.textContent=state(9)!==0?['','First steps · swipe down from the top','Tap the lantern to try night','Tap the lantern to return to day','A special delivery · your egg is arriving'][state(9)]:state(10)?'A name for your companion · swipe letters, then save':state(7)?'Resting · tap PWR to wake':state(2)===0?'Mystery egg · hold gently to warm it':state(2)===1?'A little hello is on its way…':'Your little world · tap to reveal the controls';}
-try{m=await createGame();m._web_init(crypto.getRandomValues(new Uint32Array(1))[0]);try{const saved=localStorage.getItem(storageKey);if(saved){const bytes=Uint8Array.from(atob(saved),c=>c.charCodeAt(0));if(bytes.length>8192)throw Error();m.HEAPU8.set(bytes,m._web_save_buffer());if(!m._web_load(bytes.length))throw Error();}}catch{storageBlocked=true;saveNote.textContent='The saved companion could not be restored. Its original record is kept in browser storage until you choose to save or reset.';}ready=true;document.querySelectorAll('button').forEach(b=>b.disabled=false);updateSound();render();requestAnimationFrame(frame);}catch(error){status.textContent='The emulator could not load. Please reload in a browser with WebAssembly support.';console.error(error);}
+try{const {default:createGame}=await import(edition.module);m=await createGame();m._web_init(crypto.getRandomValues(new Uint32Array(1))[0]);try{const saved=localStorage.getItem(storageKey);if(saved){const bytes=Uint8Array.from(atob(saved),c=>c.charCodeAt(0));if(bytes.length>8192)throw Error();m.HEAPU8.set(bytes,m._web_save_buffer());if(!m._web_load(bytes.length))throw Error();}}catch{storageBlocked=true;saveNote.textContent='The saved companion could not be restored. Its original record is kept in browser storage until you choose to save or reset.';}ready=true;document.querySelectorAll('button').forEach(b=>b.disabled=false);updateSound();render();requestAnimationFrame(frame);}catch(error){status.textContent='The emulator could not load. Please reload in a browser with WebAssembly support.';console.error(error);}

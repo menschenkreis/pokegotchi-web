@@ -30,6 +30,9 @@ static void performance_tests(void){
     for(int s=0;s<3;++s)for(int e=1;e<PG_EMOTE_COUNT;++e){
         g.pet.species=(uint32_t)s;pg_react(&g,(pg_emote)e,PG_SOUND_NONE);pg_game before=g;
         memset(pixels,0,sizeof pixels);pg_creature(&c,&g,36,66,1);uint32_t hash=pg_crc32(pixels,sizeof pixels);
+        /* The sprite artwork uses magenta as a source transparency key.
+           It must never reach the composited creature for any reaction. */
+        for(size_t k=0;k<72*72;++k)CHECK(pixels[k]!=pg_rgb(0xff00ff));
         CHECK(!memcmp(&g,&before,sizeof g));m=g;m.muted=true;memset(quiet,0,sizeof quiet);pg_creature(&d,&m,36,66,1);
         CHECK(!memcmp(pixels,quiet,sizeof pixels));
         g.anim+=0.18f;g.emote_time-=0.18f;memset(pixels,0,sizeof pixels);pg_creature(&c,&g,36,66,1);
@@ -84,4 +87,56 @@ static void care_feedback_tests(void){
     }
     pg_standby(&g,true);CHECK(g.bowl_time==0&&g.emote_time==0);
 }
-int main(void){synth_tests();performance_tests();care_feedback_tests();printf("PASS %d character/synth checks; bounded cues, PCM fragmentation, mute, shell privacy, render purity, reactions and care phases\n",checks);return 0;}
+static void sprite_frame_tests(void){
+    uint16_t pixels[72*72],other[72*72];pg_canvas a={pixels,72,72},b={other,72,72};
+    for(int species=0;species<PG_SPECIES_COUNT;++species){
+        pg_game g;pg_init(&g,42);g.pet.phase=PG_ALIVE;g.pet.species=(pg_species)species;
+        g.screen=PG_HOME;g.x=233;g.y=280;g.target_x=300;g.target_y=280;
+        g.anim=.05f;memset(pixels,0,sizeof pixels);pg_creature(&a,&g,36,66,1);
+        g.anim=.25f;memset(other,0,sizeof other);pg_creature(&b,&g,36,66,1);
+        CHECK(memcmp(pixels,other,sizeof pixels)!=0); /* Walk frames differ. */
+        g.target_x=g.x;g.sleeping=true;memset(other,0,sizeof other);pg_creature(&b,&g,36,66,1);
+        CHECK(memcmp(pixels,other,sizeof pixels)!=0); /* Sleep has its own pose. */
+        for(size_t i=0;i<72*72;++i)CHECK(other[i]!=pg_rgb(0xff00ff));
+        /* Neutral breathing retains the silhouette and differs by only a
+           handful of pixels, and every reaction settles back into neutral. */
+        g.sleeping=false;g.goal=PG_ATTENTION;g.blink=0;g.pet.satiety=g.pet.energy=g.pet.clean=100;
+        g.anim=0;memset(pixels,0,sizeof pixels);pg_creature(&a,&g,36,66,1);
+        g.anim=2.5f;memset(other,0,sizeof other);pg_creature(&b,&g,36,66,1);
+        int changed=0;for(size_t i=0;i<72*72;++i)changed+=pixels[i]!=other[i];
+        CHECK(changed>0&&changed<=18);
+        for(int e=1;e<PG_EMOTE_COUNT;++e){
+            g.anim=0;g.emote=(pg_emote)e;g.emote_duration=2;g.emote_time=.001f;
+            memset(other,0,sizeof other);pg_creature(&b,&g,36,66,1);
+            CHECK(!memcmp(pixels,other,sizeof pixels));
+        }
+        g.emote_time=0;g.emote=PG_EMOTE_NONE;
+        /* Each persistent state alternates complete artwork frames while
+           rendering remains pure; effects alone cannot satisfy this test. */
+        for(int state=0;state<5;++state){
+            g.sleeping=state==4;g.goal=PG_ATTENTION;g.blink=0;
+            g.pet.satiety=state==1?20:100;g.pet.energy=state==2?20:100;
+            g.pet.clean=state==3?20:100;g.pet.neglect_active=false;
+            g.anim=.05f;pg_game before=g;memset(pixels,0,sizeof pixels);pg_creature(&a,&g,36,66,1);
+            CHECK(!memcmp(&g,&before,sizeof g));
+            g.anim=3.0f;memset(other,0,sizeof other);pg_creature(&b,&g,36,66,1);
+            CHECK(memcmp(pixels,other,sizeof pixels)!=0);
+        }
+    }
+}
+static void egg_delivery_frame_tests(void){
+    static uint16_t first[466*466],second[466*466];
+    pg_canvas a={first,466,466},b={second,466,466};
+    pg_game g;pg_init(&g,42);g.screen=PG_HOME;g.pet.phase=PG_EGG;g.anim=0;
+    g.warmth_time=0;pg_game before=g;pg_render(&a,&g);
+    CHECK(!memcmp(&before,&g,sizeof g));
+    g.anim=1;pg_render(&b,&g);CHECK(memcmp(first,second,sizeof first)!=0);
+    g.pet.phase=PG_HATCHING;g.hatch_time=2;pg_render(&a,&g);
+    g.hatch_time=4.7f;pg_render(&b,&g);CHECK(memcmp(first,second,sizeof first)!=0);
+    pg_tutorial t={0};t.committed=PG_TUTORIAL_DELIVERY;t.descent_seconds=1;
+    g.pet.phase=PG_EGG;g.anim=0;pg_render_tutorial_preview(&a,&g,&t);
+    g.anim=.25f;before=g;pg_render_tutorial_preview(&b,&g,&t);
+    CHECK(!memcmp(&before,&g,sizeof g));CHECK(memcmp(first,second,sizeof first)!=0);
+    for(size_t i=0;i<466*466;++i)CHECK(second[i]!=pg_rgb(0xff00ff));
+}
+int main(void){synth_tests();performance_tests();care_feedback_tests();sprite_frame_tests();egg_delivery_frame_tests();printf("PASS %d character/synth checks; bounded cues, PCM fragmentation, mute, shell privacy, render purity, reactions, care phases and sprite frames\n",checks);return 0;}

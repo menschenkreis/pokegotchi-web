@@ -51,3 +51,30 @@ simulator captures, with synthetic care states.
 The existing three creatures remain; the full art/UI redesign is in design review.
 The release brain, hardware performance acceptance and 24-hour offline soak remain
 open. No physical device access is needed for this update.
+
+## Forest and Classic editions
+
+The workshop defaults to **Forest**, the 27 October forest-world renderer snapshot.
+Visitors can switch above the game or use these direct links:
+
+- [Forest](https://menschenkreis.github.io/pokegotchi-web/?version=forest#play):
+  illustrated woodland, redesigned leaf/mushroom/bird creatures, frame animation,
+  wooden menus and woodland mini-game art. Animation refinement remains ongoing.
+- [Classic](https://menschenkreis.github.io/pokegotchi-web/?version=classic#play):
+  the previous published game from commit `8b8ff3c`, preserved in
+  `versions/classic/`.
+
+Each edition keeps separate browser progress. Classic uses the existing
+`pokegotchi-browser-v1` record, so earlier visitors retain their companion there.
+Forest starts its own life under `pokegotchi-browser-forest-v1`. Switching saves
+the current session and loads the other edition; restarting affects only the
+selected edition. Both versions start muted and pause while hidden.
+
+`scripts/build.sh` compiles and verifies **both** WebAssembly modules. Tests also
+check that their rendered frames differ and their save keys are independent.
+The Forest input hashes are recorded in `versions/forest-snapshot.json`; future
+Forest refreshes must leave the frozen Classic source unchanged. The generated
+Forest asset header is included; source reference sheets/converter remain in the
+full desktop project. Screenshots on the site are actual simulator captures,
+separate from generated source art. No release brain or physical sensor support
+has been added.
