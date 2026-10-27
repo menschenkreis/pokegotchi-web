@@ -12,9 +12,11 @@ void pg_debug_hatch(pg_game *g){
 }
 void pg_debug_reset(pg_game *g){
     if(g->screen!=PG_DEBUG||!g->debug_reset_armed)return;
+    if(g->transactional_resets){g->reset_request=PG_REQUEST_DEV_RESET;return;}
+    pg_device_data device=g->device;pg_device_runtime utilities=g->utilities;
     bool muted=g->muted,audio=g->echo_audio,brain=g->brain_ready;uint8_t brightness=g->pet.brightness;
     uint32_t revision=g->revision+1,session=g->echo.session+1,seed=pg_random(&g->pet);
-    pg_init(g,seed);g->muted=g->pet.muted=muted;g->pet.brightness=brightness;
+    pg_init(g,seed);g->device=device;g->utilities=utilities;g->utilities.editing=false;g->utilities.idle=0;g->muted=g->pet.muted=muted;g->pet.brightness=brightness;
     g->echo.session=session;g->echo_audio=audio;g->brain_ready=brain;g->revision=revision;g->dirty=true;
 }
 void pg_balance_start(pg_game *g){
@@ -48,6 +50,7 @@ static void wipe(pg_game *g,float ax,float ay,float bx,float by){
         float ex=x-(ax+t*dx),ey=y-(ay+t*dy);
         if(ex*ex+ey*ey<=38*38){w->foam[i]=0;--w->left;}
     }
+    if(w->total&&w->left&&((w->total-before)*5/w->total)!=((w->total-w->left)*5/w->total))pg_react(g,PG_EMOTE_CHEER,PG_SOUND_NONE);
     if(before!=w->left&&w->sound_gap<=0){if(!g->muted)g->sound=PG_SOUND_TAP;w->sound_gap=0.12f;}
     if(w->left==0&&!w->finished){
         w->finished=true;w->stroke=false;pg_clean(g);pg_game_result(g,5,1);

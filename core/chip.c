@@ -26,6 +26,7 @@ void pg_chip_start(pg_chip *s,pg_sound sound,pg_species species,uint32_t variati
     int beat=voice?(s->voice==PG_MOSSLET?75:s->voice==PG_EMBERKIN?55:95):65;
     int v=voice?(int)(variation%3):0;
     switch(sound){
+    case PG_SOUND_GRUMBLE:note(s,root+2,55);note(s,-1,30);note(s,root,70);note(s,-1,30);note(s,root-5,110);break;
     case PG_SOUND_TAP:note(s,84,28);break;
     case PG_SOUND_WARM:note(s,72,75);note(s,-1,25);note(s,76,100);break;
     case PG_SOUND_HATCH:

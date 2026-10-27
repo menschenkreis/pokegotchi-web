@@ -7,12 +7,36 @@ assert.equal(m._web_state(2),0,'starts with mystery egg');
 assert.equal(m._web_state(0),1,'startup muted');
 const first=m.HEAPU16.slice(m._web_frame()/2,m._web_frame()/2+466*466);
 assert.ok(new Set(first).size>15,'renderer produces artwork');
+const tap=(x,y)=>{m._web_pointer(0,x,y);m._web_pointer(2,x,y);};
+const saved=()=>{const n=m._web_save();assert.ok(n>0,'valid browser checkpoint');return m.HEAPU8.slice(m._web_save_buffer(),m._web_save_buffer()+n);};
+const restore=bytes=>{m.HEAPU8.set(bytes,m._web_save_buffer());assert.equal(m._web_load(bytes.length),1);};
+assert.equal(m._web_state(9),1,'fresh world starts tutorial');
+assert.equal(m._web_state(12),420,'seven-minute incubation');
+m._web_hatch();assert.equal(m._web_state(2),0,'shortcut cannot skip tutorial');
+m._web_pointer(0,233,100);m._web_pointer(2,233,180);
+assert.equal(m._web_state(9),2,'swipe lesson');
+const lesson=saved();m._web_init(9);restore(lesson);assert.equal(m._web_state(9),2,'resume unfinished lesson');
+tap(120,220);assert.equal(m._web_state(9),3,'night lesson');
+tap(120,220);assert.equal(m._web_state(9),4,'delivery starts');
+m._web_tick(1);const delivery=saved();m._web_init(10);restore(delivery);
+assert.equal(m._web_state(9),4,'delivery replays after reload');
+m._web_tick(2);assert.equal(m._web_state(9),4,'not landed early');
+m._web_tick(1.1);assert.equal(m._web_state(9),0,'landed');
+assert.equal(m._web_state(11),0,'incubation starts at landing');
+m._web_tick(20);assert.equal(m._web_state(11),20);
 m._web_hatch();assert.equal(m._web_state(2),1,'hatch reveal starts');
 for(let i=0;i<250;i++)m._web_tick(.04);
 assert.equal(m._web_state(2),2,'reveal completes');
+assert.equal(m._web_state(10),1,'naming follows hatch');
+tap(289,355);assert.equal(m._web_state(10),0,'confirm proposed name');
 for(let i=0;i<6;i++){m._web_open(i);for(let t=0;t<100;t++)m._web_tick(0.04);m._web_frame();assert.equal(m._web_state(1),[5,6,7,11,13,14][i]);m._web_key(0);}
 const n=m._web_save(),p=m._web_save_buffer();const bytes=m.HEAPU8.slice(p,p+n);
 m._web_init(9);m.HEAPU8.set(bytes,p);assert.equal(m._web_load(n),1);assert.equal(m._web_state(2),2);
 m.HEAPU8[p]^=255;assert.equal(m._web_load(n),0,'rejects corrupt saves');
 m._web_key(1);assert.equal(m._web_state(7),1);m._web_key(1);assert.equal(m._web_state(7),0);
-console.log('WASM: render, six games, silent startup, save roundtrip, corruption rejection and standby pass');
+// Old browser life records migrate without replaying tutorial.
+const ck=saved(),legacy=ck.slice(88,816);restore(legacy);assert.equal(m._web_state(9),0);
+// Night pose is part of the new browser checkpoint.
+m._web_key(0);tap(120,220);const night=saved();m._web_init(20);restore(night);assert.equal(m._web_state(7),1,'night restored');
+m._web_reset(21);assert.equal(m._web_state(9),1,'full reset restarts tutorial');
+console.log('WASM: tutorial resume/delivery, seven-minute timer, naming, six games, legacy migration, night scene, corruption and reset pass');

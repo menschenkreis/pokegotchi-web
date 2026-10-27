@@ -65,7 +65,7 @@ void pg_ttt_start(pg_game *g) {
     bool starter = (g->ttt.round % 2) != 0;
     uint32_t round = g->ttt.round + 1;
     memset(&g->ttt, 0, sizeof g->ttt);
-    g->ttt.round = round; g->ttt.pet_starts = starter;
+    g->ttt.last_cell=-1;g->ttt.round = round; g->ttt.pet_starts = starter;
     g->ttt.turn = starter ? -1 : 1; g->ttt.think = 0.7f;
     g->screen = PG_TTT;
 }
@@ -78,7 +78,7 @@ static void ttt_check(pg_game *g) {
 bool pg_ttt_move(pg_game *g, int cell) {
     if (g->pet.phase != PG_ALIVE || g->screen != PG_TTT || g->ttt.finished ||
         g->ttt.turn != 1 || cell < 0 || cell > 8 || g->ttt.cells[cell]) return false;
-    g->ttt.cells[cell] = 1; g->ttt.turn = -1; g->ttt.think = 0.6f;
+    g->ttt.last_cell=cell;g->ttt.look_time=.3f;g->ttt.cells[cell] = 1; g->ttt.turn = -1; g->ttt.think = 0.6f;
     ttt_check(g); return true;
 }
 static void tilt_target(pg_game *g) {
@@ -139,6 +139,7 @@ void pg_open_game(pg_game *g, int which) {
 }
 void pg_games_tick(pg_game *g, float dt) {
     if (g->standby || g->pet.phase != PG_ALIVE || g->sleeping) return;
+    g->ttt.look_time=fmaxf(0,g->ttt.look_time-dt);
     pg_echo_tick(g,dt);
     pg_nurture_tick(g,dt);
     if (g->screen == PG_TTT && !g->ttt.finished && g->ttt.turn == -1) {
@@ -151,8 +152,8 @@ void pg_games_tick(pg_game *g, float dt) {
                 for (int i = 0; i < 9; ++i) if (!g->ttt.cells[i]) free_cells[n++] = i;
                 if (n) move = free_cells[pg_random(&g->pet) % (uint32_t)n];
             }
-            if (move >= 0) g->ttt.cells[move] = -1;
-            g->ttt.turn = 1; ttt_check(g);
+            if (move >= 0){g->ttt.cells[move]=-1;g->ttt.last_cell=move;g->ttt.look_time=.3f;}
+            g->ttt.turn = 1;pg_react(g,PG_EMOTE_CURIOUS,PG_SOUND_NONE);ttt_check(g);
         }
     } else if (g->screen == PG_TILT && !g->tilt.finished) {
         pg_tilt *t = &g->tilt;
@@ -162,10 +163,13 @@ void pg_games_tick(pg_game *g, float dt) {
         t->vy = (t->vy + g->tilt_y * 220 * dt) * expf(-2 * dt);
         t->x += t->vx * dt; t->y += t->vy * dt;
         float dx = t->x - 233, dy = t->y - 244, d = sqrtf(dx * dx + dy * dy);
-        if (d > 103) {
-            t->x = 233 + dx / d * 103; t->y = 244 + dy / d * 103;
-            float dot = (t->vx * dx + t->vy * dy) / d;
-            if (dot > 0) { t->vx -= 1.5f * dot * dx / d; t->vy -= 1.5f * dot * dy / d; }
+        /* The 12px ball touches the inner 114px field rim at radius 102. */
+        if (d >= 102) {
+            t->x = 233 + dx / d * 102; t->y = 244 + dy / d * 102;
+            t->vx = t->vy = 0; t->finished = t->fell = true;
+            g->tilt_x = g->tilt_y = 0;
+            pg_game_result(g, 1, -1);
+            return;
         }
         dx = t->x - t->target_x; dy = t->y - t->target_y;
         if (dx * dx + dy * dy < 22 * 22) { ++t->score; tilt_target(g); if (!g->muted) g->sound = PG_SOUND_HAPPY; }

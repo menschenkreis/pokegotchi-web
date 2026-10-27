@@ -1,4 +1,5 @@
 #include "game.h"
+#include "tutorial_life.h"
 #include "brain.h"
 #include "draw.h"
 #include <assert.h>
@@ -26,37 +27,63 @@ static void egg_tests(void){
     for(int i=0;i<100;++i)pg_egg_care(&a,0,0);CHECK(a.pet.egg_visits==1);
     pg_advance_care(&a,31,false);pg_egg_care(&a,0,0);CHECK(a.pet.egg_visits==2);
     pg_advance_care(&a,31,false);pg_egg_care(&a,0,0);CHECK(a.pet.egg_visits==3);
-    a.pet.sheltered=true;pg_advance_care(&a,1800,false);CHECK(a.pet.incubation==PG_EGG_SECONDS);
+    CHECK(PG_EGG_SECONDS==420);
+    a.pet.sheltered=true;
+    pg_advance_care(&a,PG_EGG_SECONDS-a.pet.incubation-1,false);
+    CHECK(a.pet.incubation==PG_EGG_SECONDS-1);step(&a,0.1);CHECK(a.pet.phase==PG_EGG);
+    pg_advance_care(&a,1,false);CHECK(a.pet.incubation==PG_EGG_SECONDS);
     a.screen=PG_CARE;step(&a,1);CHECK(a.pet.phase==PG_EGG);
     a.screen=PG_HOME;step(&a,0.1);CHECK(a.pet.phase==PG_HATCHING);
     uint32_t original=a.pet.species;step(&a,6);CHECK(a.pet.phase==PG_ALIVE);CHECK(a.pet.species==original);
     pg_init(&a,9);pg_advance_care(&a,30*PG_DAY,true);CHECK(a.pet.phase==PG_EGG);CHECK(a.pet.health==100);
-    pg_init(&a,9);a.pet.sheltered=true;pg_advance_care(&a,1800,true);CHECK(a.pet.incubation>600&&a.pet.incubation<800);
+    pg_init(&a,9);a.pet.sheltered=true;pg_advance_care(&a,180,true);CHECK(a.pet.incubation==180);
     CHECK(a.pet.phase==PG_EGG);
+    /* Cold/unsheltered, sleep, chunking and save/load all retain real-time progress. */
+    pg_init(&a,9);b=a;pg_advance_care(&a,PG_EGG_SECONDS,true);
+    for(int i=0;i<7;++i)pg_advance_care(&b,60,false);
+    CHECK(a.pet.incubation==PG_EGG_SECONDS&&b.pet.incubation==PG_EGG_SECONDS);
+    step(&a,0.1);CHECK(a.pet.phase==PG_EGG); /* three visits still required */
+    pg_init(&a,9);pg_advance_care(&a,123.5,true);
+    uint8_t save[PG_SAVE_MAX];pg_pet saved;size_t len=pg_save_encode(&a.pet,17,save,sizeof save);
+    CHECK(len&&pg_save_decode(&saved,NULL,save,len));pg_restore(&b,&saved);CHECK(b.pet.incubation==123.5);
+    pg_advance_care(&b,PG_EGG_SECONDS-123.5,true);CHECK(b.pet.incubation==PG_EGG_SECONDS);
+    /* Existing six-hour records, including already-hatched pets, stay loadable. */
+    for(int phase=PG_EGG;phase<=PG_DEAD;++phase){
+        pg_init(&a,9);a.pet.phase=(pg_phase)phase;a.pet.elapsed=6*PG_HOUR;
+        a.pet.incubation=6*PG_HOUR;a.pet.egg_visits=3;
+        len=pg_save_encode(&a.pet,18,save,sizeof save);
+        CHECK(len&&pg_save_decode(&saved,NULL,save,len));
+        CHECK(saved.identity==a.pet.identity&&saved.phase==a.pet.phase&&saved.incubation==6*PG_HOUR);
+        pg_tutorial_life life,decoded;
+        CHECK(pg_tutorial_life_from_pet(&life,&saved,0,PG_TUTORIAL_LANDED));
+        len=pg_tutorial_life_encode_v7(&life,19,save,sizeof save);
+        CHECK(len&&pg_tutorial_life_decode(&decoded,NULL,save,len));
+        pg_restore(&b,&decoded.pet);CHECK(b.pet.phase==a.pet.phase);
+        if(phase==PG_EGG){step(&b,0.1);CHECK(b.pet.phase==PG_HATCHING);}
+    }
 }
 static void care_tests(void){
-    pg_game g,a,b;alive(&g,22);pg_advance_care(&g,24*PG_HOUR,true);
-    CHECK(g.pet.phase==PG_ALIVE);CHECK(fabsf(g.pet.satiety)<0.001);CHECK(fabsf(g.pet.health-100)<0.001);
-    pg_advance_care(&g,12*PG_HOUR,true);CHECK(fabsf(g.pet.health-50)<0.01);
-    pg_advance_care(&g,11.9*PG_HOUR,true);CHECK(g.pet.phase==PG_ALIVE);
-    pg_advance_care(&g,0.2*PG_HOUR,true);CHECK(g.pet.phase==PG_DEAD);CHECK(g.screen==PG_MEMORIAL);
-    alive(&g,22);pg_advance_care(&g,40*PG_HOUR,true);CHECK(g.pet.health<34);
-    pg_feed(&g,0);CHECK(g.pet.satiety==100);CHECK(g.pet.phase==PG_ALIVE);
-    pg_advance_care(&g,6*PG_HOUR,true);CHECK(g.pet.health==100);
-    g.pet.clean=g.pet.affection=0;pg_advance_care(&g,PG_HOUR,false);CHECK(g.pet.phase==PG_ALIVE);
-    alive(&a,25);b=a;pg_advance_care(&a,40*PG_HOUR,true);
-    for(int i=0;i<2400;++i)pg_advance_care(&b,60,true);
-    CHECK(fabsf(a.pet.health-b.pet.health)<0.03);CHECK(fabsf(a.pet.satiety-b.pet.satiety)<0.03);
+    pg_game g,a,b;alive(&g,22);
+    pg_advance_care(&g,12*PG_HOUR,false);CHECK(g.pet.neglect_active&&g.pet.neglect_us==0);
+    pg_advance_care(&g,36*PG_HOUR-1,false);CHECK(g.pet.phase==PG_ALIVE);
+    pg_advance_care(&g,1,false);CHECK(g.pet.phase==PG_DEAD&&g.screen==PG_MEMORIAL);
+    alive(&a,25);b=a;pg_advance_care(&a,40*PG_HOUR,false);
+    for(int i=0;i<2400;++i)pg_advance_care(&b,60,false);
+    CHECK(a.pet.neglect_us==b.pet.neglect_us);CHECK(a.pet.care_food==b.pet.care_food);
+    g=a;g.since_food=100;pg_feed(&g,0);pg_clean(&g);CHECK(g.pet.neglect_active);
+    pg_advance_care(&g,4.75,true);CHECK(!g.pet.neglect_active&&g.pet.energy>=95);
+    alive(&g,11);g.pet.energy=0;g.pet.clean=0;g.pet.satiety=0;pg_advance_care(&g,1,false);
+    g.since_food=100;pg_feed(&g,1);pg_clean(&g);CHECK(g.pet.neglect_active);
+    g.standby=true;float energy=g.pet.energy;pg_tick(&g,1);CHECK(g.pet.energy<=energy);
+    g.sleeping=true;pg_tick(&g,5);CHECK(g.pet.energy==100&&!g.pet.neglect_active);
+    alive(&g,33);pg_advance_care(&g,20*PG_HOUR,false);
+    pg_tutorial_life life,decoded;uint8_t bytes[PG_SAVE_MAX];
+    CHECK(pg_tutorial_life_from_pet(&life,&g.pet,0,PG_TUTORIAL_LANDED));
+    CHECK(pg_tutorial_life_encode_v7(&life,7,bytes,sizeof bytes)>0);
+    CHECK(pg_tutorial_life_decode(&decoded,NULL,bytes,728));
+    CHECK(decoded.pet.neglect_active&&decoded.pet.neglect_us==g.pet.neglect_us);
+    pg_restore(&b,&decoded.pet);pg_advance_care(&b,28*PG_HOUR,false);CHECK(b.pet.phase==PG_DEAD);
     alive(&g,20);double before=g.pet.elapsed;pg_advance_care(&g,NAN,false);pg_advance_care(&g,-5,false);CHECK(g.pet.elapsed==before);
-    /* Regular feeding indefinitely supports life; growth is not a death timer. */
-    alive(&g,44);
-    for(int i=0;i<90;++i){g.since_food=10;pg_feed(&g,i%3);pg_advance_care(&g,12*PG_HOUR,true);}
-    CHECK(g.pet.phase==PG_ALIVE);CHECK(g.stage==PG_ADULT);
-    g.pet.health=0.01f;g.pet.satiety=0;pg_advance_care(&g,60,false);CHECK(g.pet.phase==PG_DEAD);
-    uint32_t id=g.pet.identity;g.pet.plant_style=2;pg_new_egg(&g);CHECK(g.pet.identity==id);
-    g.pet.death_acknowledged=true;pg_new_egg(&g);CHECK(g.pet.phase==PG_EGG);CHECK(g.pet.identity!=id);
-    CHECK(g.pet.legacy_count==1&&g.pet.plant_style==2&&g.pet.generation==2);
-    CHECK(g.pet.legacy_name[0]!=0);
 }
 static void save_tests(void){
     pg_game g;alive(&g,42);pg_feed(&g,1);pg_pet_gently(&g);pg_advance_care(&g,42,false);
@@ -96,64 +123,12 @@ static void save_tests(void){
     pg_game restored;pg_restore(&restored,&g.pet);CHECK(restored.pet.elapsed==g.pet.elapsed);CHECK(restored.pet.health==g.pet.health);
     pg_restore(&restored,&g.pet);CHECK(restored.pet.elapsed==g.pet.elapsed); /* cold boot never invents time */
 }
-static void echo_ready(pg_game *g,pg_gesture action){
-    g->echo.sequence[g->echo.passed]=(uint8_t)action;pg_echo_replay(g);
-    step(g,0.9);CHECK(g->echo.stage==PG_ECHO_INPUT&&g->echo.timer>2.8f);
-}
-static void gesture(pg_game *g,pg_gesture action){
-    if(action==PG_SHAKE){pg_echo_shake_key(g);return;}
-    pg_pointer(g,0,210,238);step(g,0.12);
-    if(action==PG_SWIPE)pg_pointer(g,1,295,238);
-    pg_pointer(g,2,action==PG_SWIPE?295:210,238);
-}
 static void echo_tests(void){
-    pg_game g;alive(&g,81);g.muted=true;pg_open_game(&g,3);
-    CHECK(g.screen==PG_ECHO&&g.echo.stage==PG_ECHO_CUE);
-    unsigned kinds=0;for(int i=0;i<5;++i)kinds|=1u<<g.echo.sequence[i];CHECK(kinds==7);
-    pg_echo_gesture(&g,g.echo.prompt);CHECK(g.echo.passed==0);
-    /* A pointer begun before GO cannot turn into a late pass. */
-    pg_pointer(&g,0,233,238);step(&g,0.9);pg_pointer(&g,2,233,238);CHECK(g.echo.passed==0);
-    g.echo.prompt=PG_TAP;pg_pointer(&g,0,233,238);step(&g,0.6);pg_pointer(&g,2,233,238);
-    CHECK(g.echo.passed==0&&g.echo.stage==PG_ECHO_INPUT);
-    /* Returning to origin after a drag is not a tap. */
-    pg_pointer(&g,0,233,238);pg_pointer(&g,1,270,238);pg_pointer(&g,2,233,238);CHECK(g.echo.passed==0);
-    pg_echo_gesture(&g,PG_SWIPE);CHECK(g.echo.stage==PG_ECHO_RETRY);CHECK(g.echo.passed==0);
-    uint32_t round=g.echo.round;step(&g,1.1);CHECK(g.echo.round==round+1&&g.echo.stage==PG_ECHO_CUE);
-    echo_ready(&g,PG_SWIPE);gesture(&g,PG_TAP);CHECK(g.echo.stage==PG_ECHO_RETRY);
-    echo_ready(&g,PG_SWIPE);gesture(&g,PG_SWIPE);CHECK(g.echo.stage==PG_ECHO_PASS&&g.echo.passed==1);
-    pg_pointer(&g,2,295,238);pg_echo_gesture(&g,PG_SWIPE);CHECK(g.echo.passed==1);
-    pg_echo_next(&g);echo_ready(&g,PG_TAP);gesture(&g,PG_TAP);CHECK(g.echo.passed==2);
-    pg_echo_next(&g);echo_ready(&g,PG_SHAKE);
-    /* One resting tilt and a slow orientation change are not alternating impulses. */
-    for(int i=0;i<50;++i){pg_echo_accel(&g,0,0,1,0.01f);step(&g,0.01);}
-    for(int i=0;i<50;++i){float a=(float)i/50;pg_echo_accel(&g,sinf(a),0,cosf(a),0.01f);step(&g,0.01);}
-    CHECK(g.echo.passed==2&&g.echo.stage==PG_ECHO_INPUT);
-    for(int i=0;i<3;++i){step(&g,0.08);pg_echo_accel(&g,i%2?-0.9f:0.9f,0,1,0.01f);}
-    CHECK(g.echo.passed==3&&g.echo.stage==PG_ECHO_PASS);
-    pg_echo_accel(&g,-1,0,1,0.01f);CHECK(g.echo.passed==3);
-    pg_echo_next(&g);echo_ready(&g,PG_TAP);step(&g,3.1);CHECK(g.echo.stage==PG_ECHO_RETRY&&g.echo.passed==3);
-    echo_ready(&g,PG_TAP);gesture(&g,PG_TAP);pg_echo_next(&g);echo_ready(&g,PG_SHAKE);gesture(&g,PG_SHAKE);
-    CHECK(g.echo.stage==PG_ECHO_DONE&&g.echo.passed==5&&g.pet.games_played[3]==1&&g.pet.games_won[3]==1);
-    pg_echo_gesture(&g,PG_SHAKE);CHECK(g.pet.games_played[3]==1);CHECK(g.pet.health==100);
-    /* Playback callbacks are bound to session, round AND stage. */
-    g.muted=false;g.echo_audio=true;pg_open_game(&g,3);
-    uint32_t session=g.echo.session;round=g.echo.round;
-    pg_echo_replay(&g);pg_echo_audio_done(&g,session,round,PG_ECHO_CUE);CHECK(g.echo.stage==PG_ECHO_CUE);
-    round=g.echo.round;pg_echo_audio_done(&g,session,round,PG_ECHO_CUE);CHECK(g.echo.stage==PG_ECHO_GO);
-    pg_echo_audio_done(&g,session,round,PG_ECHO_CUE);CHECK(g.echo.stage==PG_ECHO_GO);
-    pg_echo_audio_done(&g,session,round,PG_ECHO_GO);CHECK(g.echo.stage==PG_ECHO_INPUT&&g.echo.timer==3);
-    pg_back(&g);pg_echo_audio_done(&g,session,round,PG_ECHO_GO);CHECK(g.screen==PG_GAMES&&g.echo.stage==PG_ECHO_OFF);
-    pg_open_game(&g,3);pg_echo_audio_done(&g,session,round,PG_ECHO_GO);CHECK(g.echo.stage==PG_ECHO_CUE);
-    g.muted=true;step(&g,0.1);CHECK(!g.echo.audio_wait);step(&g,0.8);CHECK(g.echo.stage==PG_ECHO_INPUT);
-    pg_sleep(&g,true);CHECK(g.echo.stage==PG_ECHO_OFF&&g.screen==PG_HOME);
-    pg_sleep(&g,false);g.muted=false;g.echo_audio=true;pg_open_game(&g,3);step(&g,2.1);
-    CHECK(!g.echo_audio&&g.echo.stage==PG_ECHO_CUE);step(&g,0.9);CHECK(g.echo.stage==PG_ECHO_INPUT);
-    /* The four games retain full-size rows and separate navigation. */
-    pg_back(&g);CHECK(g.games_page==1);pg_tap(&g,125,405);CHECK(g.games_page==0&&g.screen==PG_GAMES);
-    pg_tap(&g,339,405);CHECK(g.games_page==1);pg_tap(&g,233,208);CHECK(g.screen==PG_ECHO);
-    pg_back(&g);pg_tap(&g,233,410);CHECK(g.screen==PG_HOME);
-    pg_open_game(&g,1);pg_pointer(&g,0,97,244);step(&g,0.2);CHECK(g.tilt.vx<0);
-    pg_pointer(&g,2,97,244);CHECK(g.tilt_x==0&&g.tilt_y==0);
+    pg_game g;alive(&g,81);pg_open_game(&g,3);CHECK(g.echo.stage==PG_ECHO_CUE&&g.echo.attempts==3);
+    pg_echo_gesture(&g,g.echo.prompt);CHECK(g.echo.score==0);pg_pointer(&g,0,233,238);step(&g,.9);pg_pointer(&g,2,233,238);CHECK(g.echo.score==0);
+    CHECK(g.echo.stage==PG_ECHO_INPUT);pg_echo_gesture(&g,g.echo.prompt);CHECK(g.echo.score==1&&g.echo.stage==PG_ECHO_PASS);step(&g,.5);CHECK(g.echo.stage==PG_ECHO_CUE);
+    pg_back(&g);CHECK(g.screen==PG_GAMES&&g.echo.stage==PG_ECHO_OFF);pg_tap(&g,153,394);CHECK(g.games_page==0);pg_tap(&g,313,394);CHECK(g.games_page==1);pg_tap(&g,313,394);CHECK(g.games_page==1);pg_tap(&g,233,180);CHECK(g.screen==PG_ECHO);pg_back(&g);CHECK(g.games_page==1);
+    pg_open_game(&g,1);pg_pointer(&g,0,97,244);step(&g,.2);CHECK(g.tilt.vx<0);pg_pointer(&g,2,97,244);CHECK(g.tilt_x==0&&g.tilt_y==0);
 }
 static unsigned ttt_positions;
 static void explore_ttt(int8_t b[9],int turn){
@@ -171,6 +146,16 @@ static void game_tests(void){
     uint32_t games=g.pet.games_played[0];pg_back(&g);CHECK(g.pet.games_played[0]==games);
     pg_open_game(&g,1);g.tilt_x=1;step(&g,32);CHECK(g.tilt.finished);CHECK(g.pet.games_played[1]==1);
     CHECK(hypotf(g.tilt.x-233,g.tilt.y-244)<=103.01f);
+    CHECK(g.tilt.fell&&g.tilt.vx==0&&g.tilt.vy==0);
+    for(int direction=0;direction<8;++direction){
+        pg_open_game(&g,1);g.tilt.ready=0;g.tilt.score=7;
+        g.tilt_x=cosf(direction*3.14159265f/4);g.tilt_y=sinf(direction*3.14159265f/4);
+        step(&g,4);CHECK(g.tilt.finished&&g.tilt.fell&&g.tilt.seconds>20);
+        unsigned played=g.pet.games_played[1];step(&g,2);CHECK(g.pet.games_played[1]==played);
+        pg_tap(&g,233,360);CHECK(!g.tilt.finished&&!g.tilt.fell&&g.tilt.score==0);
+    }
+    pg_open_game(&g,1);g.tilt.ready=0;g.tilt.score=5;g.tilt.seconds=.01f;step(&g,.02);CHECK(g.tilt.finished&&!g.tilt.fell);
+
     pg_open_game(&g,2);CHECK(g.rhythm.showing);pg_rhythm_tap(&g,0);CHECK(g.rhythm.cursor==0);
     step(&g,4);CHECK(!g.rhythm.showing);step(&g,0.5);
     int note=g.rhythm.notes[0];pg_rhythm_tap(&g,(note+1)%3);CHECK(g.rhythm.finished);CHECK(g.pet.games_played[2]==1);
@@ -209,15 +194,66 @@ static void input_and_memory_tests(void){
     uint8_t data[PG_SAVE_MAX];pg_pet out;size_t n=pg_save_encode(&g.pet,0,data,sizeof data);
     CHECK(n>0&&pg_save_decode(&out,NULL,data,n));CHECK(out.event_count==g.pet.event_count);
 }
+static void letter_swipe(pg_game *g,int direction){
+    pg_pointer(g,0,233,230);pg_pointer(g,2,233,direction>0?180:280);
+}
+static void naming_tests(void){
+    pg_game g,r;pg_init(&g,42);char proposed[16];memcpy(proposed,g.pet.name,16);
+    g.pet.phase=PG_HATCHING;step(&g,6);
+    CHECK(g.pet.phase==PG_ALIVE&&g.screen==PG_NAME_EDIT&&g.pet.naming_pending);
+    CHECK(!strcmp(g.name_edit,proposed)&&!strcmp(g.pet.name,proposed));
+    uint8_t data[PG_SAVE_MAX];pg_pet pet;size_t n=pg_save_encode(&g.pet,7,data,sizeof data);
+    CHECK(n&&pg_save_decode(&pet,NULL,data,n));pg_restore(&r,&pet);
+    CHECK(r.screen==PG_NAME_EDIT&&r.naming_hatch&&!strcmp(r.name_edit,proposed));
+    /* Keep discards edits and accepts the original proposed name. */
+    letter_swipe(&g,1);pg_tap(&g,177,359);
+    CHECK(g.screen==PG_HOME&&!g.pet.naming_pending&&!strcmp(g.pet.name,proposed));
+    g.screen=PG_CARD;pg_tap(&g,233,95);CHECK(g.screen==PG_NAME_EDIT&&!g.naming_hatch);
+    unsigned rng=g.pet.rng,identity=g.pet.identity;uint32_t events=g.pet.event_count;
+    for(int i=0;i<16;++i)pg_tap(&g,233,300);
+    pg_tap(&g,289,359);CHECK(g.screen==PG_NAME_EDIT&&!g.name_edit[0]);
+    for(int i=0;i<26;++i){letter_swipe(&g,1);CHECK(g.name_edit[0]=='A'+i);}
+    letter_swipe(&g,1);CHECK(g.name_edit[0]==' ');
+    pg_tap(&g,289,359);CHECK(g.screen==PG_NAME_EDIT&&!g.name_edit[0]&&g.name_cursor==0);
+    letter_swipe(&g,-1);CHECK(g.name_edit[0]=='Z');
+    pg_tap(&g,233,300);CHECK(!g.name_edit[0]);
+    for(int i=0;i<16;++i){letter_swipe(&g,1);pg_tap(&g,344,237);}
+    CHECK(strlen(g.name_edit)==PG_NAME_MAX&&!strcmp(g.pet.name,proposed)&&g.name_cursor==PG_NAME_MAX-1);
+    pg_tap(&g,233,405);CHECK(g.screen==PG_NAME_EDIT); /* no invisible Back target */
+    pg_back(&g);CHECK(g.screen==PG_CARD&&!strcmp(g.pet.name,proposed));
+    pg_tap(&g,233,95);for(int i=0;i<16;++i)pg_tap(&g,233,300);
+    const int letters[]={12,21,13,9}; /* L U M I */
+    for(int i=0;i<4;++i){for(int j=0;j<letters[i];++j)letter_swipe(&g,1);pg_tap(&g,344,237);}
+    CHECK(!strcmp(g.name_edit,"LUMI"));
+    pg_tap(&g,122,237);CHECK(g.name_cursor==3);letter_swipe(&g,-1);CHECK(!strcmp(g.name_edit,"LUMH"));
+    letter_swipe(&g,1);pg_tap(&g,344,237);
+    pg_standby(&g,true);letter_swipe(&g,1);CHECK(!strcmp(g.name_edit,"LUMI"));pg_standby(&g,false);
+    pg_tap(&g,289,359);CHECK(g.screen==PG_CARD&&!strcmp(g.pet.name,"LUMI")&&g.dirty);
+    CHECK(g.pet.rng==rng&&g.pet.identity==identity&&g.pet.event_count==events);
+    n=pg_save_encode(&g.pet,8,data,sizeof data);CHECK(n&&pg_save_decode(&pet,NULL,data,n));pg_restore(&r,&pet);
+    CHECK(!strcmp(r.pet.name,"LUMI")&&r.screen==PG_HOME&&!r.pet.naming_pending);
+    /* v4 saves migrate without prompting an already living creature. */
+    data[4]=4;uint32_t crc=pg_crc32(data,n-4);for(int i=0;i<4;++i)data[n-4+i]=(uint8_t)(crc>>(8*i));
+    CHECK(pg_save_decode(&pet,NULL,data,n)&&!pet.naming_pending&&!strcmp(pet.name,"LUMI"));
+    /* Older long names load intact; edit is capped, cancel preserves the original. */
+    strcpy(g.pet.name,"ABCDEFGHIJKLMNO");pg_name_begin(&g);
+    CHECK(!strcmp(g.name_edit,"ABCDEF"));pg_back(&g);CHECK(!strcmp(g.pet.name,"ABCDEFGHIJKLMNO"));
+    pg_name_begin(&g);pg_tap(&g,289,359);CHECK(!strcmp(g.pet.name,"ABCDEF"));
+    n=pg_save_encode(&g.pet,9,data,sizeof data);CHECK(n&&pg_save_decode(&pet,NULL,data,n)&&strlen(pet.name)==6);
+    pg_init(&g,42);g.screen=PG_CARD;pg_tap(&g,233,95);CHECK(g.screen==PG_CARD); /* egg privacy */
+}
 static void render_tests(void){
     uint16_t *pixels=malloc(466*466*2);CHECK(pixels);pg_canvas c={pixels,466,466};pg_game g;alive(&g,76);
     for(int s=PG_HOME;s<PG_SCREEN_COUNT;++s){g.screen=(pg_screen)s;pg_render(&c,&g);CHECK(pixels[0]==pg_rgb(0x07151c));}
+    g.screen=PG_NAME_EDIT;strcpy(g.name_edit,"A");g.name_cursor=0;pg_render(&c,&g);
+    unsigned letter_pixels=0;for(int y=190;y<246;++y)for(int x=213;x<253;++x)if(pixels[y*466+x]==pg_rgb(0xf8edcf))++letter_pixels;
+    CHECK(letter_pixels>500); /* The selected letter must actually render at a supported font scale. */
     uint32_t hashes[3];g.screen=PG_HOME;
     for(int i=0;i<3;++i){g.pet.species=(uint32_t)i;pg_render(&c,&g);hashes[i]=pg_crc32(pixels,466*466*2);}
     CHECK(hashes[0]!=hashes[1]&&hashes[1]!=hashes[2]&&hashes[0]!=hashes[2]);free(pixels);
 }
 int main(void){
-    egg_tests();care_tests();save_tests();game_tests();echo_tests();input_and_memory_tests();render_tests();
+    egg_tests();care_tests();save_tests();game_tests();echo_tests();input_and_memory_tests();naming_tests();render_tests();
     printf("PASS %d checks; %u legal tic-tac-toe positions; egg, care, persistence, games, input, rendering\n",checks,ttt_positions);
     return 0;
 }

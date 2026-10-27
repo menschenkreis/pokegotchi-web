@@ -22,8 +22,8 @@ jobs:
           version: '4.0.18'
       - name: Verify shared core
         run: |
-          for test in game character icons nurture motion grove power; do
-            cc -std=c11 -O2 -Icore tests/test_$test.c core/{game,games,nurture,motion,power,echo,save,draw,icons,render,chip,brain}.c third_party/pocket_tank/{q4_model,word_tok}.c -Ithird_party/pocket_tank -lm -o /tmp/pg-test
+          for test in game character icons nurture motion grove power handling utilities; do
+            cc -std=c11 -O2 -Icore tests/test_$test.c core/*.c third_party/pocket_tank/{q4_model,word_tok}.c -Ithird_party/pocket_tank -lm -o /tmp/pg-test
             /tmp/pg-test
           done
       - run: bash scripts/build.sh

@@ -33,8 +33,8 @@ static void art(void){
     CHECK(before==pg_crc32(guarded,sizeof guarded));
 }
 static void controls(void){
-    pg_game g;pg_init(&g,42);pg_tap(&g,351,77);CHECK(g.screen==PG_SETTINGS);
-    pg_tap(&g,177,359);CHECK(g.screen==PG_HELP&&g.icon_help_page==0);
+    pg_game g;pg_init(&g,42);pg_pointer(&g,0,233,28);pg_pointer(&g,2,233,100);pg_tap(&g,351,77);CHECK(g.screen==PG_SETTINGS);
+    pg_tap(&g,313,394);pg_tap(&g,313,394);pg_tap(&g,233,219);CHECK(g.screen==PG_HELP&&g.icon_help_page==0);
     for(int i=1;i<=8;++i){pg_tap(&g,233,362);CHECK(g.icon_help_page==i%8);}
     pg_tap(&g,233,416);CHECK(g.screen==PG_SETTINGS);pg_back(&g);CHECK(g.screen==PG_HOME);
     g.pet.phase=PG_ALIVE;g.screen=PG_HOME;pg_tap(&g,113,385);CHECK(g.screen==PG_FOOD);
@@ -48,8 +48,9 @@ static void controls(void){
     pg_tap(&g,180,141);CHECK(g.album_expanded&&g.album_selected.kind==PG_EV_FED);
     pg_event saved=g.album_selected;pg_event_add(&g,PG_EV_PETTED,0);CHECK(!memcmp(&saved,&g.album_selected,sizeof saved));
     pg_back(&g);CHECK(g.screen==PG_ALBUM&&!g.album_expanded);pg_back(&g);CHECK(g.screen==PG_HOME);
-    g.pet.phase=PG_DEAD;g.screen=PG_MEMORIAL;pg_tap(&g,233,365);CHECK(g.pet.phase==PG_DEAD&&g.pet.death_acknowledged);
-    pg_tap(&g,233,365);CHECK(g.pet.phase==PG_EGG);
+    g.pet.phase=PG_DEAD;g.screen=PG_MEMORIAL;pg_tap(&g,233,365);CHECK(g.pet.phase==PG_DEAD&&g.memorial_reset_armed);
+    pg_back(&g);CHECK(g.pet.phase==PG_DEAD&&!g.memorial_reset_armed);
+    pg_tap(&g,233,365);pg_tap(&g,233,365);CHECK(g.pet.phase==PG_EGG);
 }
 static void purity(void){
     uint16_t *pixels=malloc(PG_W*PG_H*2);CHECK(pixels);pg_canvas c={pixels,PG_W,PG_H};pg_game g;pg_init(&g,42);g.pet.phase=PG_ALIVE;
@@ -60,12 +61,15 @@ static void round_screen(void){
     /* Audit pixels before clipping: a final circular mask must never hide UI. */
     uint16_t *pixels=calloc(PG_W*PG_H,2);CHECK(pixels);pg_canvas c={pixels,PG_W,PG_H};
     unsigned audited=0;
-    for(int species=0;species<3;++species)for(int screen=0;screen<PG_SCREEN_COUNT;++screen)for(int variant=0;variant<4;++variant){
+    for(int species=0;species<3;++species)for(int screen=0;screen<PG_SCREEN_COUNT;++screen)for(int variant=0;variant<12;++variant){
         pg_game g;pg_init(&g,42);g.pet.phase=variant==0?PG_EGG:PG_ALIVE;g.pet.species=(pg_species)species;
         pg_ttt_start(&g);pg_tilt_start(&g);pg_rhythm_start(&g);pg_echo_start(&g);pg_balance_start(&g);pg_wash_start(&g);
-        g.screen=(pg_screen)screen;g.games_page=variant%2;g.icon_help_page=variant;g.pet.egg_visits=3;
+        g.screen=(pg_screen)screen;g.games_page=variant%2;g.utilities.settings_page=variant%3;g.utilities.clock_field=variant%5;g.utilities.edit=(pg_calendar){2099,12,31,23,59,0};g.echo.score=variant>=8?UINT32_MAX:0;g.device.echo_best=g.echo.score;g.echo.attempts=variant%4;g.device.auto_sleep=variant==11;g.utilities.idle=variant==11?117:0;g.utilities.storage_fault=variant==10;g.utilities.clock_error=variant==9;g.icon_help_page=variant;g.pet.egg_visits=3;
+        if(variant>=7)strcpy(g.pet.name,"ABCDEFGHIJKLMNO");
+        if(screen==PG_NAME_EDIT){strcpy(g.name_edit,variant>=7?"ABCDEF":"MISO");g.naming_hatch=variant%2;}
+        g.utilities.battery=(pg_battery_snapshot){.valid=variant>=4,.present=variant!=5,.charging=variant==6,.percent=variant==7?5:100,.synthetic=true};
         g.ttt.finished=g.tilt.finished=g.rhythm.finished=g.balance.finished=g.wash.finished=variant==2;
-        g.balance.started=variant!=0;g.balance.angle=variant==3?0.65f:0;g.hud_seconds=variant==2?0:8;g.debug_reset_armed=variant==3;
+        g.balance.started=variant!=0;g.balance.angle=variant==3?0.65f:0;g.top_hud_seconds=g.hud_seconds=variant==2?0:8;g.debug_reset_armed=variant==3;
         g.echo.stage=variant==2?PG_ECHO_DONE:PG_ECHO_INPUT;
         g.x=g.target_x=variant==3?333:233;g.y=g.target_y=268;g.invitation=variant==3;
         g.emote=variant==3?PG_EMOTE_INVITE:PG_EMOTE_NONE;g.emote_time=1;g.emote_duration=2;
@@ -91,15 +95,65 @@ static void round_screen(void){
     const pg_screen destinations[]={PG_FOOD,PG_CARE,PG_GAMES,PG_ALBUM};
     for(int i=0;i<4;++i){g.screen=PG_HOME;pg_tap(&g,pg_ui_dock[i][0],pg_ui_dock[i][1]);CHECK(g.screen==destinations[i]);}
     g.screen=PG_SETTINGS;bool was_muted=g.muted;pg_tap(&g,30,180);CHECK(g.muted==was_muted);
-    pg_tap(&g,233,219);CHECK(g.muted!=was_muted);
+    g.utilities.settings_page=0;pg_tap(&g,233,219);CHECK(g.muted!=was_muted);
     g.screen=PG_HOME;pg_tap(&g,113,420);CHECK(g.screen==PG_HOME); /* obsolete off-arc dock area */
     g.screen=PG_GAMES;g.games_page=0;pg_tap(&g,365,430);CHECK(g.games_page==0); /* formerly clipped page corner */
     pg_tap(&g,313,394);CHECK(g.games_page==1);pg_tap(&g,153,394);CHECK(g.games_page==0);
     pg_tap(&g,233,415);CHECK(g.screen==PG_HOME);
     pg_pointer(&g,0,233,252);pg_pointer(&g,2,0,0);CHECK(!g.pointer_down&&g.screen==PG_HOME);
     pg_open_game(&g,3);g.echo.stage=PG_ECHO_INPUT;g.echo.prompt=PG_SWIPE;
-    pg_pointer(&g,0,233,238);pg_pointer(&g,2,465,465);CHECK(!g.pointer_down&&!g.echo.pointer_armed&&g.echo.passed==0);
+    pg_pointer(&g,0,233,238);pg_pointer(&g,2,465,465);CHECK(!g.pointer_down&&!g.echo.pointer_armed&&g.echo.score==0);
     free(pixels);printf("Round safe-area audit: %u unclipped interface variants, all screens and three species\n",audited);
+}
+static void participant_clearance(void){
+    /* Compare every painted sprite pixel with the final composite, independently
+       of the UI drawing order. This catches a portrait hidden behind controls. */
+    uint16_t *sprite=calloc(PG_W*PG_H,2),*screen=calloc(PG_W*PG_H,2);CHECK(sprite&&screen);
+    pg_canvas a={sprite,PG_W,PG_H},b={screen,PG_W,PG_H};unsigned poses=0;
+    for(int species=0;species<3;++species)for(int stage=0;stage<3;++stage)
+    for(int reaction=0;reaction<PG_EMOTE_COUNT;++reaction)for(int frame=0;frame<4;++frame)
+    for(int view=0;view<4;++view){
+        pg_game g;pg_init(&g,42);g.pet.phase=PG_ALIVE;g.pet.species=(pg_species)species;g.stage=(pg_stage)stage;
+        g.screen=view<2?PG_TTT:PG_TILT;g.ttt.finished=g.tilt.finished=view%2;g.ttt.winner=1;
+        pg_react(&g,(pg_emote)reaction,PG_SOUND_NONE);
+        g.emote_time=g.emote_duration*(1-frame*.24f);g.anim=frame*.3f;
+        memset(sprite,0,PG_W*PG_H*2);memset(screen,0,PG_W*PG_H*2);
+        pg_creature(&a,&g,233,PG_UI_PAW_FEET,1);pg_render_interface(&b,&g);
+        unsigned painted=0;
+        for(int y=16;y<139;++y)for(int x=180;x<286;++x)if(sprite[y*PG_W+x]){
+            CHECK(sprite[y*PG_W+x]==screen[y*PG_W+x]);++painted;
+        }
+        CHECK(painted>300);++poses;
+    }
+    for(int species=0;species<3;++species)for(int finished=0;finished<2;++finished){
+        pg_game g;pg_init(&g,42);g.pet.phase=PG_ALIVE;g.pet.species=(pg_species)species;g.screen=PG_RHYTHM;
+        g.rhythm.length=10;g.rhythm.lit=1;g.rhythm.finished=finished;g.facing=1;
+        g.emote=finished?PG_EMOTE_CHEER:PG_EMOTE_CURIOUS;g.emote_duration=g.emote_time=1;
+        memset(sprite,0,PG_W*PG_H*2);memset(screen,0,PG_W*PG_H*2);
+        pg_creature(&a,&g,233,PG_UI_TUNES_FEET,1);pg_render_interface(&b,&g);
+        for(int y=75;y<190;++y)for(int x=180;x<286;++x)if(sprite[y*PG_W+x])CHECK(sprite[y*PG_W+x]==screen[y*PG_W+x]);
+        ++poses;
+    }
+    for(int species=0;species<3;++species)for(int stage=0;stage<3;++stage)
+    for(int tilt=0;tilt<3;++tilt)for(int reaction=0;reaction<2;++reaction){
+        pg_game g;pg_init(&g,42);g.pet.phase=PG_ALIVE;g.pet.species=(pg_species)species;g.stage=(pg_stage)stage;
+        g.screen=PG_BALANCE;g.goal=PG_PLAY;g.pet.health=g.pet.satiety=100;
+        g.balance.angle=(tilt-1)*.65f;g.balance.rescue=.2f;g.balance.started=tilt!=0;g.balance.finished=tilt==2;
+        g.emote=reaction?PG_EMOTE_CHEER:PG_EMOTE_NONE;g.emote_duration=1;g.emote_time=.8f;g.facing=g.balance.angle<0?-1:1;
+        int x=233+(int)(g.balance.angle*58),y=269+(int)(sinf(g.balance.angle)*g.balance.angle*35)-(int)(sinf(.2f*7)*9);
+        memset(sprite,0,PG_W*PG_H*2);memset(screen,0,PG_W*PG_H*2);
+        pg_creature(&a,&g,x,y,2);pg_render_interface(&b,&g);
+        for(int row=100;row<308;++row)for(int col=100;col<366;++col)if(sprite[row*PG_W+col])CHECK(sprite[row*PG_W+col]==screen[row*PG_W+col]);
+        ++poses;
+    }
+    pg_game g;
+    for(int cell=0;cell<9;++cell){
+        pg_init(&g,42);g.pet.phase=PG_ALIVE;pg_ttt_start(&g);
+        pg_tap(&g,pg_ui_paw_board.x+(cell%3)*PG_UI_PAW_STEP+35,pg_ui_paw_board.y+(cell/3)*PG_UI_PAW_STEP+35);
+        CHECK(g.ttt.cells[cell]==1);
+    }
+    pg_init(&g,42);g.pet.phase=PG_ALIVE;pg_ttt_start(&g);pg_tap(&g,233,126);CHECK(g.ttt.turn==1&&g.ttt.cells[1]==0);
+    free(sprite);free(screen);printf("Participant clearance: %u complete active/result sprite poses and all nine touch cells\n",poses);
 }
 static void rectangle_pixels(void){
     /* A scalar reference checks alignment, odd spans and clipping independently
@@ -153,4 +207,23 @@ static void damage_regions(void){
     pg_canvas invalid=front;invalid.width=465;CHECK(pg_frame_damage(&invalid,&back_frame,guarded,PG_DAMAGE_CAP)==-1);
     free(a);free(b);free(shown);printf("Frame damage: 64 immutable-frame patch/guard cases cover all changed pixels\n");
 }
-int main(void){art();controls();purity();round_screen();rectangle_pixels();damage_regions();printf("PASS %u icon/interface checks; %d original sprites, clipping, targets, guide, journal, memorial, pure rendering\n",checks,PG_ICON_COUNT);return 0;}
+static void compact_echo_portrait(void){
+    /* The old two-buffer path is the pixel reference for the direct sampler. */
+    uint16_t *screen=malloc(PG_W*PG_H*2),sprite[72*72];CHECK(screen);
+    pg_canvas c={screen,PG_W,PG_H},sc={sprite,72,72};
+    for(int species=0;species<3;++species)for(int stage=0;stage<=PG_ECHO_DONE;++stage)for(int frame=0;frame<8;++frame){
+        pg_game g;pg_init(&g,17);g.pet.phase=PG_ALIVE;g.pet.species=species;g.screen=PG_ECHO;
+        g.echo.stage=stage;g.echo.prompt=frame%3;g.anim=frame*.17f;
+        pg_game pose=g;pose.facing=g.echo.prompt==PG_SWIPE?-1:1;
+        pose.emote=stage==PG_ECHO_CUE?PG_EMOTE_INVITE:stage==PG_ECHO_INPUT?PG_EMOTE_CURIOUS:stage==PG_ECHO_RETRY?PG_EMOTE_SASS:PG_EMOTE_CHEER;
+        pose.emote_time=pose.emote_duration=1;
+        for(int i=0;i<72*72;++i)sprite[i]=pg_rgb(0xff00ff);
+        pg_creature(&sc,&pose,36,66,1);pg_render(&c,&g);
+        int ink=0;for(int y=0;y<48;++y)for(int x=0;x<48;++x){
+            uint16_t expected=sprite[(y*72/48)*72+x*72/48];
+            if(expected!=pg_rgb(0xff00ff)){CHECK(screen[(129+y)*PG_W+209+x]==expected);++ink;}
+        }CHECK(ink>0);
+    }
+    free(screen);
+}
+int main(void){compact_echo_portrait();art();controls();purity();round_screen();participant_clearance();rectangle_pixels();damage_regions();printf("PASS %u icon/interface checks; %d original sprites, clipping, targets, guide, journal, memorial, pure rendering\n",checks,PG_ICON_COUNT);return 0;}

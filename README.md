@@ -17,7 +17,7 @@ bash scripts/build.sh
 python3 -m http.server 8080 --directory dist
 ```
 
-Open http://localhost:8080. `scripts/build.sh` builds the site and runs real WebAssembly smoke tests. GitHub Actions also runs seven shared C test suites and deploys `dist/` to GitHub Pages on pushes to `main`. Pull requests build and test without publishing.
+Open http://localhost:8080. `scripts/build.sh` builds the site and runs real WebAssembly smoke tests. GitHub Actions also runs nine shared C test suites and deploys `dist/` to GitHub Pages on pushes to `main`. Pull requests build and test without publishing.
 
 ## Controls
 
@@ -35,3 +35,19 @@ Saves stay in this browser's local storage; they are separate from desktop and h
 `core/` is a snapshot of the shared game code; `web/bridge.c` exposes a small browser API; `site/` contains the public landing page and Web Audio/Canvas adapter. The two landing-page images are actual shared-renderer captures, not concept art. Source artwork and creatures are original. See [THIRD_PARTY.md](THIRD_PARTY.md) for retained upstream notices.
 
 The private development studio, device credentials, recovery images, life saves, training corpus and model weights are not part of this repository. No serial access is needed to build or play.
+
+## 27 October 2026 evening update
+
+Current shared-core snapshot includes the picture-led tutorial and parachute arrival,
+seven-minute incubation, post-hatch naming and profile rename, fixed-point care
+and recovery, deliberate memorial reset, larger lantern, swipe menus and saved
+night poses. Browser records atomically store a checked life/scene checkpoint and
+settings in one localStorage value; previous life-only records migrate without
+restarting the tutorial. This is browser persistence, not the hardware NVS protocol.
+Unfinished lessons resume and interrupted parachute descents replay. Hidden-tab
+time stays paused. Startup stays muted. The progress journal uses labeled actual
+simulator captures, with synthetic care states.
+
+The existing three creatures remain; the full art/UI redesign is in design review.
+The release brain, hardware performance acceptance and 24-hour offline soak remain
+open. No physical device access is needed for this update.

@@ -37,7 +37,8 @@ bool pg_save_valid_pet(const pg_pet *p) {
     for (size_t i = 0; i < sizeof times / sizeof *times; ++i)
         if (!isfinite(times[i]) || times[i] < 0 || times[i] > 36525.0 * PG_DAY) return false;
     if (!isfinite(p->last_egg_visit) || p->last_egg_visit < -60 || p->last_egg_visit > p->elapsed ||
-        p->age > p->elapsed || p->incubation > PG_EGG_SECONDS ||
+        /* Six-hour saves remain valid after shortening the live hatch timer. */
+        p->age > p->elapsed || p->incubation > fmax(6.0 * PG_HOUR, PG_EGG_SECONDS) ||
         p->plant_style > 2 || p->bed_style > 2 || p->toy_style > 2 || p->legacy_species >= PG_SPECIES_COUNT) return false;
     float meters[] = {p->satiety,p->energy,p->clean,p->affection,p->health,p->trust,
         p->warmth,p->comfort,p->bold,p->curious,p->playful};
@@ -58,7 +59,7 @@ bool pg_save_valid_pet(const pg_pet *p) {
 size_t pg_save_encode(const pg_pet *p, uint32_t sequence, uint8_t *out, size_t cap) {
     if (!out || cap < 32 || !pg_save_valid_pet(p)) return 0;
     codec c = {.dst=out,.cap=cap,.ok=true};
-    put32(&c, UINT32_C(0x544f4750)); put32(&c, 4); put32(&c, sequence); put32(&c, 0);
+    put32(&c, UINT32_C(0x544f4750)); put32(&c, 5); put32(&c, sequence); put32(&c, 0);
     put32(&c,p->rng); put32(&c,p->identity); put32(&c,p->generation); put32(&c,p->species); put32(&c,(uint32_t)p->phase);
     putd(&c,p->elapsed); putd(&c,p->age); putd(&c,p->incubation); putd(&c,p->last_egg_visit);
     putf(&c,p->satiety); putf(&c,p->energy); putf(&c,p->clean); putf(&c,p->affection); putf(&c,p->health); putf(&c,p->trust);
@@ -68,7 +69,7 @@ size_t pg_save_encode(const pg_pet *p, uint32_t sequence, uint8_t *out, size_t c
     for (int i=0;i<3;++i) { put32(&c,p->games_played[i]); put32(&c,p->games_won[i]); }
     put32(&c,p->discoveries); put32(&c,p->egg_visits); put32(&c,p->milestones); put32(&c,p->legacy_count);
     put32(&c,(uint32_t)p->plant_style | (uint32_t)p->bed_style << 8 | (uint32_t)p->toy_style << 16 | (uint32_t)p->legacy_species << 24);
-    put32(&c,(p->sheltered?1u:0u) | (p->death_acknowledged?2u:0u) | (p->muted?4u:0u));
+    put32(&c,(p->sheltered?1u:0u) | (p->death_acknowledged?2u:0u) | (p->muted?4u:0u) | (p->naming_pending?8u:0u));
     for (int i=0;i<16;i+=4) {
         uint32_t word = 0; for (int j=0;j<4;++j) word |= (uint32_t)(uint8_t)p->name[i+j] << (8*j); put32(&c,word);
     }
@@ -92,7 +93,7 @@ bool pg_save_decode(pg_pet *p, uint32_t *sequence, const uint8_t *data, size_t l
     if (!p || !data || len < 32 || len > PG_SAVE_MAX) return false;
     codec c = {.src=data,.cap=len,.ok=true};
     if (get32(&c)!=UINT32_C(0x544f4750)) return false;
-    uint32_t version=get32(&c);if(version<1||version>4)return false;
+    uint32_t version=get32(&c);if(version<1||version>5)return false;
     uint32_t seq=get32(&c), size=get32(&c);
     if (size > PG_SAVE_MAX - 20 || len != (size_t)size + 20) return false;
     codec tail = {.src=data,.at=len-4,.cap=len,.ok=true};
@@ -108,8 +109,9 @@ bool pg_save_decode(pg_pet *p, uint32_t *sequence, const uint8_t *data, size_t l
     for (int i=0;i<3;++i) {v.games_played[i]=get32(&c);v.games_won[i]=get32(&c);}
     v.discoveries=get32(&c);v.egg_visits=get32(&c);v.milestones=get32(&c);v.legacy_count=get32(&c);
     uint32_t styles=get32(&c), flags=get32(&c);
-    if(flags & ~7u) return false;
+    if(flags & ~(version>=5?15u:7u)) return false;
     v.plant_style=(uint8_t)styles;v.bed_style=(uint8_t)(styles>>8);v.toy_style=(uint8_t)(styles>>16);v.legacy_species=(uint8_t)(styles>>24);
+    v.naming_pending=(flags&8)!=0;
     v.sheltered=(flags&1)!=0;v.death_acknowledged=(flags&2)!=0;v.muted=(flags&4)!=0;
     for(int i=0;i<16;i+=4) {uint32_t word=get32(&c);for(int j=0;j<4;++j)v.name[i+j]=(char)(word>>(8*j));}
     v.event_count=get32(&c);

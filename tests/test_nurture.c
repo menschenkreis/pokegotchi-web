@@ -7,20 +7,21 @@
 static unsigned checks;
 static void step(pg_game *g,float seconds){while(seconds>0){float dt=fminf(seconds,.02f);pg_tick(g,dt);seconds-=dt;}}
 static void pet(pg_game *g,unsigned seed){pg_init(g,seed);g->pet.phase=PG_ALIVE;}
+static void reveal_top(pg_game *g){pg_pointer(g,0,233,28);pg_pointer(g,1,233,72);pg_pointer(g,2,233,110);}
 static void quiet_and_reveal(void){
     pg_game g,r;pg_init(&g,3);CHECK(g.muted&&g.pet.muted&&g.sound==PG_SOUND_NONE);
     g.pet.muted=false;pg_restore(&r,&g.pet);CHECK(r.muted&&r.pet.muted&&r.sound==PG_SOUND_NONE);
-    step(&g,9);CHECK(g.hud_seconds==0);pg_tap(&g,351,77);CHECK(g.screen==PG_HOME&&g.hud_seconds>0);
-    pg_tap(&g,351,77);CHECK(g.screen==PG_SETTINGS);
+    step(&g,9);CHECK(g.hud_seconds==0&&g.top_hud_seconds==0);pg_tap(&g,351,77);CHECK(g.screen==PG_HOME&&g.hud_seconds>0&&g.top_hud_seconds==0);
+    pg_tap(&g,351,77);CHECK(g.screen==PG_HOME&&g.top_hud_seconds==0);reveal_top(&g);CHECK(g.top_hud_seconds>0);pg_tap(&g,351,77);CHECK(g.screen==PG_SETTINGS);
     pg_back(&g);step(&g,9);CHECK(g.hud_seconds==0);
     unsigned visits=g.pet.egg_visits;float warmth=g.pet.warmth;
     pg_pointer(&g,0,233,250);step(&g,2);pg_pointer(&g,2,233,250);
     CHECK(g.screen==PG_HOME&&g.pet.egg_visits==visits&&g.pet.warmth<=warmth);
     g.pet.warmth=100;for(int i=0;i<20;++i)pg_egg_care(&g,12,4);CHECK(g.pet.warmth==72);
     g.pet.warmth=15;for(int i=0;i<20;++i)pg_egg_care(&g,12,4);CHECK(g.pet.warmth==72);
-    pg_tap(&g,351,77);uint8_t old=g.pet.brightness;
+    reveal_top(&g);pg_tap(&g,351,77);uint8_t old=g.pet.brightness;
     for(int i=0;i<5;++i){pg_tap(&g,233,144);CHECK(g.pet.brightness>=20&&g.pet.brightness<=100);}CHECK(g.pet.brightness==old);
-    pg_tap(&g,289,359);CHECK(g.screen==PG_DEBUG);unsigned identity=g.pet.identity;
+    pg_tap(&g,313,394);pg_tap(&g,313,394);pg_tap(&g,233,293);CHECK(g.screen==PG_DEBUG);unsigned identity=g.pet.identity;
     pg_tap(&g,233,271);CHECK(g.debug_reset_armed&&g.pet.identity==identity);
     pg_back(&g);CHECK(!g.debug_reset_armed&&g.pet.identity==identity);
     g.screen=PG_DEBUG;g.brain_ready=true;pg_tap(&g,233,271);pg_tap(&g,233,271);
@@ -28,6 +29,29 @@ static void quiet_and_reveal(void){
     g.screen=PG_DEBUG;identity=g.pet.identity;unsigned species=g.pet.species;
     pg_tap(&g,233,183);CHECK(g.pet.phase==PG_HATCHING&&g.screen==PG_HOME&&g.pet.identity==identity);
     step(&g,6);CHECK(g.pet.phase==PG_ALIVE&&g.pet.species==species&&g.muted&&g.sound==PG_SOUND_NONE);
+}
+static void swipe_top_hud(void){
+    pg_game g;pg_init(&g,42);CHECK(g.top_hud_seconds==0);
+    g.hud_seconds=0;unsigned visits=g.pet.egg_visits;
+    pg_pointer(&g,0,233,28);step(&g,1);pg_pointer(&g,1,233,110);step(&g,1);pg_pointer(&g,2,233,140);
+    CHECK(g.top_hud_seconds==8&&g.hud_seconds==0&&g.screen==PG_HOME);
+    CHECK(!g.pointer_down&&!g.top_pull&&g.pet.egg_visits==visits&&g.warmth_time==0);
+    /* Hidden dock does not intercept the visible cog. */
+    pg_pointer(&g,0,361,89);pg_pointer(&g,2,361,89);CHECK(g.screen==PG_SETTINGS);
+    pg_back(&g);step(&g,9);CHECK(g.top_hud_seconds==0);
+    const float drags[][4]={{233,30,233,60},{233,100,233,30},{180,50,300,70},{233,50,320,140},{233,190,233,275}};
+    for(unsigned i=0;i<sizeof drags/sizeof *drags;++i){
+        g.hud_seconds=8;g.top_hud_seconds=0;pg_pointer(&g,0,drags[i][0],drags[i][1]);pg_pointer(&g,1,drags[i][2],drags[i][3]);pg_pointer(&g,2,drags[i][2],drags[i][3]);
+        CHECK(g.top_hud_seconds==0&&g.screen==PG_HOME);
+    }
+    pg_pointer(&g,0,233,28);pg_pointer(&g,1,233,120);pg_pointer(&g,3,0,0);CHECK(!g.top_pull&&!g.pointer_down&&g.top_hud_seconds==0);
+    pg_pointer(&g,0,233,28);pg_pointer(&g,2,0,0);CHECK(!g.top_pull&&!g.pointer_down&&g.top_hud_seconds==0);
+    pg_tap(&g,361,89);CHECK(g.screen==PG_HOME&&g.top_hud_seconds==0);
+    reveal_top(&g);CHECK(g.top_hud_seconds==8);
+    /* Release over the cog only reveals; it never clicks through. */
+    pg_pointer(&g,0,351,40);CHECK(g.top_pull);pg_pointer(&g,2,351,110);CHECK(g.screen==PG_HOME&&g.top_hud_seconds==8);
+    pg_standby(&g,true);CHECK(g.top_hud_seconds==0&&!g.top_pull);pg_standby(&g,false);
+    g.pet.phase=PG_ALIVE;pg_open_game(&g,3);pg_pointer(&g,0,233,30);pg_pointer(&g,2,233,120);CHECK(g.top_hud_seconds==0&&g.screen==PG_ECHO);
 }
 static void balancing(void){
     for(unsigned seed=1;seed<=40;++seed){pg_game g;pet(&g,seed);pg_open_game(&g,4);
@@ -66,4 +90,4 @@ static void settings_save(void){
     out.muted=false;pg_restore(&r,&out);CHECK(r.muted&&r.pet.brightness==85);
     out.brightness=0;CHECK(!pg_save_valid_pet(&out));out.brightness=85;out.confidence[5]=NAN;CHECK(!pg_save_valid_pet(&out));
 }
-int main(void){quiet_and_reveal();balancing();bathing();settings_save();printf("PASS %u nursery checks: silent startup, first-tap reveal, gentle care, debug confirmation, balance win/rescue/retry, swipe completion/cancellation, v4 settings\n",checks);}
+int main(void){quiet_and_reveal();swipe_top_hud();balancing();bathing();settings_save();printf("PASS %u nursery checks: silent startup, independent swipe-down top HUD, tap-revealed dock, gesture cancellation, gentle care, debug confirmation, balance win/rescue/retry, swipe completion/cancellation, v4 settings\n",checks);}
